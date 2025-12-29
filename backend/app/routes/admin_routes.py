@@ -1,22 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from .. import crud, models, auth, schemas
-from ..deps import get_db
+from jose import jwt
+from fastapi.security import HTTPBearer
+from ..config import settings
 
 router = APIRouter()
+security = HTTPBearer()
 
-@router.post("/register", response_model=schemas.UserOut)
-def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    existing = crud.get_user_by_email(db, user.email)
-    if existing:
-        raise HTTPException(status_code=400, detail="Email already exists")
-    return crud.create_user(db, user)
+def require_admin(token: str = Depends(security)):
+    payload = jwt.decode(token.credentials, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
+    if not payload.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admins only")
+    return True
 
-@router.post("/login")
-def login(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    db_user = crud.get_user_by_email(db, user.email)
-    if not db_user or not auth.verify_password(user.password, db_user.hashed_password):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-    token = auth.create_access_token({"sub": db_user.email, "is_admin": db_user.is_admin})
-    return {"access_token": token, "token_type": "bearer"}
+@router.get("/admin/dashboard")
+def admin_dashboard(_: bool = Depends(require_admin)):
+    return {"message": "Welcome Admin"}
